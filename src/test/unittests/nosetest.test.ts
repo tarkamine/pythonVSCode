@@ -2,12 +2,16 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Tests, TestsToRun } from '../../client/unittests/common/contracts';
+import { TestCollectionStorageService } from '../../client/unittests/common/storageService';
+import { TestResultsService } from '../../client/unittests/common/testResultsService';
+import { TestsHelper } from '../../client/unittests/common/testUtils';
+import { ITestCollectionStorageService, ITestResultsService, ITestsHelper, Tests, TestsToRun } from '../../client/unittests/common/types';
 import { TestResultDisplay } from '../../client/unittests/display/main';
 import * as nose from '../../client/unittests/nosetest/main';
 import { rootWorkspaceUri, updateSetting } from '../common';
 import { initialize, initializeTest, IS_MULTI_ROOT_TEST } from './../initialize';
 import { MockOutputChannel } from './../mockClasses';
+import { MockDebugLauncher } from './mocks';
 
 const UNITTEST_TEST_FILES_PATH = path.join(__dirname, '..', '..', '..', 'src', 'test', 'pythonFiles', 'testFiles', 'noseFiles');
 const UNITTEST_SINGLE_TEST_FILE_PATH = path.join(__dirname, '..', '..', '..', 'src', 'test', 'pythonFiles', 'testFiles', 'single');
@@ -23,6 +27,10 @@ suite('Unit Tests (nosetest)', () => {
     let testManager: nose.TestManager;
     let testResultDisplay: TestResultDisplay;
     let outChannel: vscode.OutputChannel;
+    let storageService: ITestCollectionStorageService;
+    let resultsService: ITestResultsService;
+    let testsHelper: ITestsHelper;
+
     suiteSetup(async () => {
         filesToDelete.forEach(file => {
             if (fs.existsSync(file)) {
@@ -32,7 +40,8 @@ suite('Unit Tests (nosetest)', () => {
         await updateSetting('unitTest.nosetestArgs', [], rootWorkspaceUri, configTarget);
         await initialize();
     });
-    suiteTeardown(() => {
+    suiteTeardown(async () => {
+        await updateSetting('unitTest.nosetestArgs', [], rootWorkspaceUri, configTarget);
         filesToDelete.forEach(file => {
             if (fs.existsSync(file)) {
                 fs.unlinkSync(file);
@@ -51,7 +60,10 @@ suite('Unit Tests (nosetest)', () => {
         await updateSetting('unitTest.nosetestArgs', [], rootWorkspaceUri, configTarget);
     });
     function createTestManager(rootDir: string = rootDirectory) {
-        testManager = new nose.TestManager(rootDir, outChannel);
+        storageService = new TestCollectionStorageService();
+        resultsService = new TestResultsService();
+        testsHelper = new TestsHelper();
+        testManager = new nose.TestManager(rootDir, outChannel, storageService, resultsService, testsHelper, new MockDebugLauncher());
     }
 
     test('Discover Tests (single test file)', async () => {
@@ -59,17 +71,17 @@ suite('Unit Tests (nosetest)', () => {
         const tests = await testManager.discoverTests(true, true);
         assert.equal(tests.testFiles.length, 2, 'Incorrect number of test files');
         assert.equal(tests.testFunctions.length, 6, 'Incorrect number of test functions');
-        assert.equal(tests.testSuits.length, 2, 'Incorrect number of test suites');
+        assert.equal(tests.testSuites.length, 2, 'Incorrect number of test suites');
         assert.equal(tests.testFiles.some(t => t.name === path.join('tests', 'test_one.py') && t.nameToRun === t.name), true, 'Test File not found');
     });
 
-    test('Check that nameToRun in testSuits has class name after : (single test file)', async () => {
+    test('Check that nameToRun in testSuites has class name after : (single test file)', async () => {
         createTestManager(UNITTEST_SINGLE_TEST_FILE_PATH);
         const tests = await testManager.discoverTests(true, true);
         assert.equal(tests.testFiles.length, 2, 'Incorrect number of test files');
         assert.equal(tests.testFunctions.length, 6, 'Incorrect number of test functions');
-        assert.equal(tests.testSuits.length, 2, 'Incorrect number of test suites');
-        assert.equal(tests.testSuits.every(t => t.testSuite.name === t.testSuite.nameToRun.split(':')[1]), true, 'Suite name does not match class name');
+        assert.equal(tests.testSuites.length, 2, 'Incorrect number of test suites');
+        assert.equal(tests.testSuites.every(t => t.testSuite.name === t.testSuite.nameToRun.split(':')[1]), true, 'Suite name does not match class name');
     });
 
     function lookForTestFile(tests: Tests, testFile: string) {
@@ -82,7 +94,7 @@ suite('Unit Tests (nosetest)', () => {
         const tests = await testManager.discoverTests(true, true);
         assert.equal(tests.testFiles.length, 5, 'Incorrect number of test files');
         assert.equal(tests.testFunctions.length, 16, 'Incorrect number of test functions');
-        assert.equal(tests.testSuits.length, 6, 'Incorrect number of test suites');
+        assert.equal(tests.testSuites.length, 6, 'Incorrect number of test suites');
         lookForTestFile(tests, path.join('tests', 'test_unittest_one.py'));
         lookForTestFile(tests, path.join('tests', 'test_unittest_two.py'));
         lookForTestFile(tests, path.join('tests', 'unittest_three_test.py'));
@@ -96,7 +108,7 @@ suite('Unit Tests (nosetest)', () => {
         const tests = await testManager.discoverTests(true, true);
         assert.equal(tests.testFiles.length, 2, 'Incorrect number of test files');
         assert.equal(tests.testFunctions.length, 6, 'Incorrect number of test functions');
-        assert.equal(tests.testSuits.length, 2, 'Incorrect number of test suites');
+        assert.equal(tests.testSuites.length, 2, 'Incorrect number of test suites');
         lookForTestFile(tests, path.join('specific', 'tst_unittest_one.py'));
         lookForTestFile(tests, path.join('specific', 'tst_unittest_two.py'));
     });
@@ -107,7 +119,7 @@ suite('Unit Tests (nosetest)', () => {
         const tests = await testManager.discoverTests(true, true);
         assert.equal(tests.testFiles.length, 1, 'Incorrect number of test files');
         assert.equal(tests.testFunctions.length, 3, 'Incorrect number of test functions');
-        assert.equal(tests.testSuits.length, 1, 'Incorrect number of test suites');
+        assert.equal(tests.testSuites.length, 1, 'Incorrect number of test suites');
         lookForTestFile(tests, 'test_root.py');
     });
 
@@ -130,7 +142,7 @@ suite('Unit Tests (nosetest)', () => {
         assert.equal(results.summary.passed, 6, 'Passed');
         assert.equal(results.summary.skipped, 2, 'skipped');
 
-        results = await testManager.runTest(true);
+        results = await testManager.runTest(undefined, true);
         assert.equal(results.summary.errors, 1, 'Errors again');
         assert.equal(results.summary.failures, 7, 'Failures again');
         assert.equal(results.summary.passed, 0, 'Passed again');
@@ -156,7 +168,7 @@ suite('Unit Tests (nosetest)', () => {
         await updateSetting('unitTest.nosetestArgs', ['-m', 'test'], rootWorkspaceUri, configTarget);
         createTestManager();
         const tests = await testManager.discoverTests(true, true);
-        const testSuiteToRun = tests.testSuits.find(s => s.xmlClassName === 'test_root.Test_Root_test1');
+        const testSuiteToRun = tests.testSuites.find(s => s.xmlClassName === 'test_root.Test_Root_test1');
         assert.ok(testSuiteToRun, 'Test suite not found');
         // tslint:disable-next-line:no-non-null-assertion
         const testSuite: TestsToRun = { testFile: [], testFolder: [], testFunction: [], testSuite: [testSuiteToRun!.testSuite] };
