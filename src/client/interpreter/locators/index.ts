@@ -4,11 +4,12 @@ import { Disposable, Uri, workspace } from 'vscode';
 import { RegistryImplementation } from '../../common/registry';
 import { areBasePathsSame, arePathsSame, Is_64Bit, IS_WINDOWS } from '../../common/utils';
 import { IInterpreterLocatorService, PythonInterpreter } from '../contracts';
-import { IInterpreterVersionService, InterpreterVersionService } from '../interpreterVersion';
+import { InterpreterVersionService } from '../interpreterVersion';
 import { VirtualEnvironmentManager } from '../virtualEnvs';
 import { fixInterpreterDisplayName, fixInterpreterPath } from './helpers';
 import { CondaEnvFileService, getEnvironmentsFile as getCondaEnvFile } from './services/condaEnvFileService';
 import { CondaEnvService } from './services/condaEnvService';
+import { CondaLocatorService } from './services/condaLocator';
 import { CurrentPathService } from './services/currentPathService';
 import { getKnownSearchPathsForInterpreters, KnownPathsService } from './services/KnownPathsService';
 import { getKnownSearchPathsForVirtualEnvs, VirtualEnvService } from './services/virtualEnvService';
@@ -46,7 +47,7 @@ export class PythonInterpreterLocatorService implements IInterpreterLocatorServi
     }
     private async getInterpretersPerResource(resource?: Uri) {
         const locators = this.getLocators(resource);
-        const promises = locators.map(provider => provider.getInterpreters(resource));
+        const promises = locators.map(async provider => provider.getInterpreters(resource));
         const listOfInterpreters = await Promise.all(promises);
 
         // tslint:disable-next-line:underscore-consistent-invocation
@@ -67,10 +68,12 @@ export class PythonInterpreterLocatorService implements IInterpreterLocatorServi
         // The order of the services is important.
         if (IS_WINDOWS) {
             const windowsRegistryProvider = new WindowsRegistryService(new RegistryImplementation(), Is_64Bit);
+            const condaLocator = new CondaLocatorService(windowsRegistryProvider);
             locators.push(windowsRegistryProvider);
-            locators.push(new CondaEnvService(windowsRegistryProvider));
+            locators.push(new CondaEnvService(condaLocator));
         } else {
-            locators.push(new CondaEnvService());
+            const condaLocator = new CondaLocatorService();
+            locators.push(new CondaEnvService(condaLocator));
         }
         // Supplements the above list of conda environments.
         locators.push(new CondaEnvFileService(getCondaEnvFile(), versionService));
