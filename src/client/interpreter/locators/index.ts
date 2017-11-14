@@ -54,8 +54,7 @@ export class PythonInterpreterLocatorService implements IInterpreterLocatorServi
             .map(fixInterpreterDisplayName)
             .map(fixInterpreterPath)
             .reduce<PythonInterpreter[]>((accumulator, current) => {
-                if (accumulator.findIndex(item => arePathsSame(item.path, current.path)) === -1 &&
-                    accumulator.findIndex(item => areBasePathsSame(item.path, current.path)) === -1) {
+                if (accumulator.findIndex(item => arePathsSame(item.path, current.path)) === -1) {
                     accumulator.push(current);
                 }
                 return accumulator;
